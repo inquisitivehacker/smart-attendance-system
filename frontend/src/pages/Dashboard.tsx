@@ -36,7 +36,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-500">Faculty</p>
-              <p className="font-medium">{active_session.faculty}</p>
+              <p className="font-medium">{active_session.faculty_name}</p>
             </div>
             <div>
               <p className="text-sm text-gray-500">Room</p>
@@ -44,7 +44,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-500">Started At</p>
-              <p className="font-medium">{new Date(active_session.start_time).toLocaleTimeString()}</p>
+              <p className="font-medium">{new Date(active_session.started_at).toLocaleTimeString()}</p>
             </div>
           </div>
         ) : (

@@ -17,7 +17,7 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
     total_students = db.query(Student).count()
     
     # Active Session details
-    active_session = db.query(ClassroomSession).filter(ClassroomSession.is_active == True).first()
+    active_session = db.query(ClassroomSession).filter(ClassroomSession.status == "active").first()
     
     present_students = 0
     if active_session:
@@ -46,9 +46,9 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
         "active_session": {
             "id": active_session.id if active_session else None,
             "subject": active_session.subject if active_session else None,
-            "faculty": active_session.faculty if active_session else None,
+            "faculty_name": active_session.faculty_name if active_session else None,
             "room": active_session.room if active_session else None,
-            "start_time": active_session.start_time if active_session else None,
+            "started_at": active_session.started_at if active_session else None,
         },
         "attendance_metrics": {
             "total_students": total_students,

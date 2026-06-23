@@ -13,7 +13,7 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 
 @router.get("/sessions")
 def get_session_reports(db: Session = Depends(get_db)):
-    sessions = db.query(ClassroomSession).order_by(ClassroomSession.start_time.desc()).limit(50).all()
+    sessions = db.query(ClassroomSession).order_by(ClassroomSession.started_at.desc()).limit(50).all()
     total_students = db.query(Student).count()
     
     results = []
@@ -25,7 +25,7 @@ def get_session_reports(db: Session = Depends(get_db)):
         results.append({
             "id": s.id,
             "subject": s.subject,
-            "date": s.start_time,
+            "date": s.started_at,
             "present": present,
             "absent": absent,
             "percentage": round(percentage, 1)
