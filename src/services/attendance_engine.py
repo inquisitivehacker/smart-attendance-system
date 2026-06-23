@@ -28,13 +28,20 @@ class AttendanceEngine:
         self.face_service = face_service
         self.timetable = TimetableService()
 
-    def process_scan(self, scanned_id: str, frame, db: DBSession) -> dict:
+    def process_scan(self, scanned_id: str, frame, db: DBSession, skip_face_verification: bool = False) -> dict:
         """
         Main entry point — called by the hardware loop worker thread.
         Returns a result dict with status and details.
         """
         attendance_repo = AttendanceRepository(db)
         state_machine = StudentStateMachine(db)
+        session_repo = SessionRepository(db)
+
+        # 0. Check for active session first!
+        active_session = session_repo.get_active()
+        if not active_session:
+            logger.info(f"Scan rejected: No active session for {scanned_id}")
+            return {"status": "rejected", "reason": "no_active_session"}
 
         # 1. Validate barcode format
         if not self._validate_barcode(scanned_id):
@@ -63,7 +70,10 @@ class AttendanceEngine:
                 }
 
         # 4. Face verification
-        verified, confidence = self.face_service.verify(frame, scanned_id)
+        if skip_face_verification:
+            verified, confidence = True, 1.0
+        else:
+            verified, confidence = self.face_service.verify(frame, scanned_id)
 
         # 5. Get current slot
         slot = self.timetable.get_current_slot()
@@ -81,11 +91,8 @@ class AttendanceEngine:
             # Transition student state via DB repo
             state_machine.transition(scanned_id, StudentState.ACTIVE)
 
-            # Mark attendance for active session if one exists
-            session_repo = SessionRepository(db)
-            active_session = session_repo.get_active()
-            if active_session:
-                attendance_repo.mark_present(scanned_id, active_session.id)
+            # Mark attendance for the guaranteed active session
+            attendance_repo.mark_present(scanned_id, active_session.id)
 
             logger.info(f"VERIFIED: {student.name} ({scanned_id}) confidence={confidence}")
             return {
@@ -94,7 +101,7 @@ class AttendanceEngine:
                 "student_name": student.name,
                 "slot": slot,
                 "confidence": confidence,
-                "session_active": active_session is not None,
+                "session_active": True,
             }
         else:
             logger.warning(f"DENIED: {scanned_id} — face mismatch (confidence={confidence})")

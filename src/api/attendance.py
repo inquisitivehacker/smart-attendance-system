@@ -4,9 +4,64 @@ from sqlalchemy.orm import Session
 
 from src.database import get_db
 from src.repositories.attendance_repo import AttendanceRepository
-from src.schemas.attendance import AttendanceResponse, ScanResultResponse
+from src.schemas.attendance import AttendanceResponse, ScanResultResponse, AttendanceScanRequest
 
 router = APIRouter(prefix="/attendance", tags=["Attendance"])
+
+
+@router.post("/test-scan")
+def test_process_scan(data: AttendanceScanRequest, db: Session = Depends(get_db)):
+    """Temporary testing endpoint to validate attendance logic without hardware."""
+    from src.main import attendance_engine
+    if not attendance_engine:
+        raise HTTPException(status_code=503, detail="Attendance engine not ready")
+    
+    # Call the EXACT same logic used by hardware_loop.py, bypassing camera input
+    result = attendance_engine.process_scan(
+        scanned_id=data.student_id, 
+        frame=None, 
+        db=db, 
+        skip_face_verification=True
+    )
+
+    # Handle success/failure responses based on the engine's result
+    if result.get("status") == "verified":
+        # Scenario 1: Active Session Success
+        from src.repositories.session_repo import SessionRepository
+        session_repo = SessionRepository(db)
+        active_session = session_repo.get_active()
+        
+        return {
+            "success": True,
+            "student_id": data.student_id,
+            "session_id": active_session.id if active_session else None,
+            "attendance_record_created": True,
+            "engine_result": result
+        }
+    elif result.get("status") == "duplicate":
+        return {
+            "success": False,
+            "error": "Duplicate scan attempt",
+            "details": result.get("reason")
+        }
+    elif result.get("status") == "rejected":
+        if result.get("reason") == "no_active_session":
+            return {
+                "success": False,
+                "error": "No active session",
+                "details": "Scan rejected immediately because no session is running."
+            }
+        return {
+            "success": False,
+            "error": result.get("reason", "Validation failed")
+        }
+    else:
+        return {
+            "success": False,
+            "error": "Scan denied",
+            "details": result
+        }
+
 
 
 @router.get("/session/{session_id}", response_model=list[AttendanceResponse])
