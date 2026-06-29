@@ -24,10 +24,11 @@ class SessionRepository:
         return self.db.query(ClassSession).filter(ClassSession.id == session_id).first()
 
     def start_session(
-        self, faculty: str, subject: str, slot: str, room: str = "Room-1"
+        self, faculty: str, subject: str, slot: str, room: str = "Room-1", faculty_id: str = None
     ) -> ClassSession:
         session = ClassSession(
             faculty_name=faculty,
+            faculty_id=faculty_id,
             subject=subject,
             slot=slot,
             room=room,
@@ -38,6 +39,7 @@ class SessionRepository:
         self.db.commit()
         self.db.refresh(session)
         return session
+
 
     def end_session(self, session_id: int):
         self.db.query(ClassSession).filter(ClassSession.id == session_id).update(

@@ -17,7 +17,7 @@ class AttendanceRepository:
     # --- Attendance Records ---
 
     def mark_present(
-        self, student_id: str, session_id: int, method: str = "barcode_face"
+        self, student_id: str, session_id: int, method: str = "barcode_face", percentage: float = None, duration: int = None
     ) -> Attendance:
         """Upsert: update if exists, create if not."""
         existing = (
@@ -33,6 +33,10 @@ class AttendanceRepository:
             existing.status = "PRESENT"
             existing.verified_at = now
             existing.method = method
+            if percentage is not None:
+                existing.attendance_percentage = percentage
+            if duration is not None:
+                existing.duration_seconds = duration
         else:
             existing = Attendance(
                 student_id=student_id,
@@ -40,11 +44,14 @@ class AttendanceRepository:
                 status="PRESENT",
                 verified_at=now,
                 method=method,
+                attendance_percentage=percentage,
+                duration_seconds=duration,
                 created_at=now,
             )
             self.db.add(existing)
         self.db.commit()
         return existing
+
 
     def get_by_session(self, session_id: int) -> list[Attendance]:
         return (

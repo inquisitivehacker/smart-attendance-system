@@ -47,7 +47,12 @@ def init_db():
     import src.models.session  # noqa: F401
     import src.models.attendance  # noqa: F401
     import src.models.scan_log  # noqa: F401
-    import src.models.student_state
+    import src.models.student_state  # noqa: F401
     import src.models.system_status  # noqa: F401
+    import src.models.faculty  # noqa: F401
+    import src.models.presence_event  # noqa: F401
+    import src.models.student_presence_state  # noqa: F401
+    import src.models.authentication_log  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+

@@ -2,7 +2,7 @@
 Attendance model — one record per student per session.
 This is the derived business record (not the raw scan log).
 """
-from sqlalchemy import Column, Integer, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, Text, Float, UniqueConstraint
 from src.database import Base
 
 
@@ -13,9 +13,12 @@ class Attendance(Base):
     student_id = Column(Text, nullable=False)
     session_id = Column(Integer, nullable=False)
     status = Column(Text, nullable=False)  # PRESENT | ABSENT | LATE | UNVERIFIED
+    attendance_percentage = Column(Float, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
     verified_at = Column(Text)  # When face was verified
     method = Column(Text, default="barcode_face")  # barcode_face | manual_override
     created_at = Column(Text)
+
 
     __table_args__ = (
         UniqueConstraint("student_id", "session_id", name="uq_student_session"),
