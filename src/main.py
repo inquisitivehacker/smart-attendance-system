@@ -69,9 +69,26 @@ def startup():
     identity_service = IdentityService(face_service=face_service)
     logger.info("Identity service initialized")
 
+    # Create EventResolver
+    from src.services.event_resolver import EventResolver
+    event_resolver = EventResolver()
+    logger.info("Event resolver initialized")
+
+    # Create PresenceEngine
+    from src.services.presence_engine import PresenceEngine
+    presence_engine = PresenceEngine()
+    logger.info("Presence engine initialized")
+
     # 4. Create attendance engine
-    attendance_engine = AttendanceEngine(face_service=face_service, identity_service=identity_service)
+    attendance_engine = AttendanceEngine(
+        face_service=face_service,
+        identity_service=identity_service,
+        event_resolver=event_resolver,
+        presence_engine=presence_engine
+    )
     logger.info("Attendance engine ready")
+
+
 
     logger.info(f"Server starting on {settings.host}:{settings.port}")
     logger.info("--- SYSTEM READY ---")

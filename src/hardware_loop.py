@@ -37,9 +37,20 @@ class HardwareLoop:
         
         logger.info("Initializing Engine and Hardware Services...")
         from src.services.identity_service import IdentityService
+        from src.services.event_resolver import EventResolver
+        from src.services.presence_engine import PresenceEngine
         self.identity_service = IdentityService(face_service=self.face_service)
-        self.engine = AttendanceEngine(self.face_service, self.identity_service)
+        self.event_resolver = EventResolver()
+        self.presence_engine = PresenceEngine()
+        self.engine = AttendanceEngine(
+            face_service=self.face_service,
+            identity_service=self.identity_service,
+            event_resolver=self.event_resolver,
+            presence_engine=self.presence_engine
+        )
         self.camera = CameraService(camera_index=settings.camera_index)
+
+
 
         self.scanner = get_scanner_service()
         

@@ -1,6 +1,6 @@
 """
 Attendance Engine — the core business logic.
-Milestone 2 Refactor: Authentication extracted to IdentityService.
+Milestone 4 Refactor: Integrates PresenceEngine as the runtime presence source.
 """
 from datetime import datetime
 import logging
@@ -8,27 +8,39 @@ import logging
 from sqlalchemy.orm import Session as DBSession
 
 from src.config import settings
-from src.repositories.student_repo import StudentRepository
 from src.repositories.session_repo import SessionRepository
 from src.repositories.attendance_repo import AttendanceRepository
+from src.repositories.presence_state_repo import PresenceStateRepository
 from src.services.face_service import FaceService
 from src.services.identity_service import IdentityService
+from src.services.event_resolver import EventResolver
+from src.services.presence_engine import PresenceEngine
 from src.services.timetable_service import TimetableService
 from src.services.state_machine import StudentStateMachine, StudentState
 from src.schemas.identity import AuthenticationStatus, Role
+from src.schemas.event_context import EventContext
+from src.schemas.event_types import EventType
 
 logger = logging.getLogger(__name__)
 
 
 class AttendanceEngine:
     """
-    Stateful engine managing attendance verification for a single classroom.
-    Instantiated once at app startup; shared across requests.
+    Stateful engine managing attendance verification for a classroom.
+    Delegates all physical occupancy changes to PresenceEngine.
     """
 
-    def __init__(self, face_service: FaceService, identity_service: IdentityService = None):
+    def __init__(
+        self,
+        face_service: FaceService,
+        identity_service: IdentityService = None,
+        event_resolver: EventResolver = None,
+        presence_engine: PresenceEngine = None
+    ):
         self.face_service = face_service
         self.identity_service = identity_service or IdentityService(face_service)
+        self.event_resolver = event_resolver or EventResolver()
+        self.presence_engine = presence_engine or PresenceEngine()
         self.timetable = TimetableService()
 
     def process_scan(self, scanned_id: str, frame, db: DBSession, skip_face_verification: bool = False) -> dict:
@@ -39,13 +51,13 @@ class AttendanceEngine:
         attendance_repo = AttendanceRepository(db)
         state_machine = StudentStateMachine(db)
         session_repo = SessionRepository(db)
+        presence_repo = PresenceStateRepository(db)
 
-        # 0. Delegate authentication to IdentityService
+        # 1. Authenticate identity via IdentityService
         auth_result = self.identity_service.authenticate(scanned_id, frame, db, skip_face_verification)
 
-        # Handle authentication failures
+        # Handle failed authentication (Early Exit - no PresenceEvent generated)
         if not auth_result.authenticated:
-            # Commit the transaction so the authentication log is written
             db.commit()
 
             if auth_result.rejection_reason == AuthenticationStatus.INVALID_FORMAT:
@@ -69,68 +81,115 @@ class AttendanceEngine:
 
             return {"status": "rejected", "reason": auth_result.rejection_reason.value}
 
-        # Process faculty scans (authenticated, but ignored for student attendance records)
-        identity = auth_result.identity
-        if identity.role == Role.FACULTY:
+        # 2. Gather factual runtime context
+        student_presence_state = "OUTSIDE"
+        faculty_presence_state = "OUTSIDE"
+        presence_record = None
+
+        if auth_result.identity.role == Role.STUDENT:
+            presence_record = presence_repo.get_or_create(scanned_id)
+            student_presence_state = presence_record.presence_state
+            last_scan_ts = presence_record.last_updated
+        else:
+            faculty_presence_state = self.presence_engine.faculty_states.get(
+                scanned_id, {}
+            ).get("presence_state", "OUTSIDE")
+            last_scan_ts = None
+
+        context = EventContext(
+            auth_result=auth_result,
+            student_presence_state=student_presence_state,
+            faculty_presence_state=faculty_presence_state,
+            last_scan_timestamp=last_scan_ts,
+            current_time=datetime.utcnow()
+        )
+
+        # 3. Resolve classroom event
+        event = self.event_resolver.resolve_event(context)
+
+        # 4. Handle duplicate scans (returns None from EventResolver)
+        if event is None:
             db.commit()
-            logger.info(f"Faculty authenticated: {identity.name} ({scanned_id})")
-            return {"status": "rejected", "reason": "faculty_scan_ignored", "name": identity.name}
-
-        # Actor is a STUDENT
-        student_name = identity.name
-
-        # 1. Check for active session first!
-        active_session = session_repo.get_active()
-        if not active_session:
-            db.commit()
-            logger.info(f"Scan rejected: No active session for {scanned_id}")
-            return {"status": "rejected", "reason": "no_active_session"}
-
-        # 2. Database-backed Cooldown check
-        last_scan = attendance_repo.get_last_successful_scan(scanned_id)
-        if last_scan and isinstance(last_scan.scanned_at, datetime):
-            delta = (datetime.utcnow() - last_scan.scanned_at).total_seconds()
-            if delta < settings.cooldown_seconds:
-                db.commit()
+            if last_scan_ts:
+                delta = (datetime.utcnow() - last_scan_ts).total_seconds()
                 remaining = int((settings.cooldown_seconds - delta) / 60)
                 logger.info(f"Duplicate scan blocked: {scanned_id} (wait {remaining}m)")
                 return {
                     "status": "duplicate",
                     "reason": f"wait_{remaining}m",
                     "student_id": scanned_id,
-                    "student_name": student_name,
+                    "student_name": auth_result.identity.name,
                 }
+            return {"status": "rejected", "reason": "cooldown_duplicate"}
 
-        # 3. Get current slot
-        slot = self.timetable.get_current_slot()
+        # 5. Process presence state transition in PresenceEngine
+        self.presence_engine.process_event(event, db)
 
-        # 4. Log the raw scan event (business auditing trail in scan_logs table)
-        attendance_repo.log_scan(
-            student_id=scanned_id,
-            scan_type="entry",
-            face_verified=True,
-            confidence=auth_result.confidence,
-            slot=slot,
-        )
+        # 6. Legacy compatibility mapping triggers
+        identity = auth_result.identity
 
-        # 5. Transition student state via DB repo
-        state_machine.transition(scanned_id, StudentState.ACTIVE)
+        # Faculty scans: start or end academic sessions
+        if event.event_type == EventType.FACULTY_ENTER:
+            # Starts a teaching session in the sessions database table
+            session = session_repo.start_session(
+                faculty=identity.name,
+                faculty_id=scanned_id,
+                subject="Computer Science",
+                slot="Hour 1"
+            )
+            db.commit()
+            logger.info(f"Session started on Faculty Enter: {identity.name}")
+            return {"status": "session_started", "session_id": session.id}
 
-        # 6. Mark attendance for the guaranteed active session
-        attendance_repo.mark_present(scanned_id, active_session.id)
+        elif event.event_type == EventType.FACULTY_EXIT:
+            # Ends the current active session
+            active_session = session_repo.get_active()
+            if active_session:
+                session_repo.end_session(active_session.id)
+            db.commit()
+            logger.info(f"Session ended on Faculty Exit: {identity.name}")
+            return {"status": "session_ended", "session_id": active_session.id if active_session else None}
 
-        # 7. Finalize database transaction
+        # Student scans: enter / exit log mapping
+        elif event.event_type in (EventType.STUDENT_ENTER, EventType.STUDENT_EXIT):
+            # Check for active session (Legacy business logic constraint)
+            active_session = session_repo.get_active()
+            if not active_session:
+                db.commit()
+                logger.info(f"Scan rejected: No active session for {scanned_id}")
+                return {"status": "rejected", "reason": "no_active_session"}
+
+            slot = self.timetable.get_current_slot()
+
+            # Insert raw audit log into scan_logs table
+            attendance_repo.log_scan(
+                student_id=scanned_id,
+                scan_type="entry",
+                face_verified=True,
+                confidence=auth_result.confidence,
+                slot=slot,
+            )
+
+            # Update legacy student states for live dashboard summary views
+            state_machine.transition(scanned_id, StudentState.ACTIVE)
+
+            # Insert present log into attendance table
+            attendance_repo.mark_present(scanned_id, active_session.id)
+
+            db.commit()
+
+            logger.info(f"VERIFIED: {identity.name} ({scanned_id}) confidence={auth_result.confidence}")
+            return {
+                "status": "verified",
+                "student_id": scanned_id,
+                "student_name": identity.name,
+                "slot": slot,
+                "confidence": auth_result.confidence,
+                "session_active": True,
+            }
+
         db.commit()
-
-        logger.info(f"VERIFIED: {student_name} ({scanned_id}) confidence={auth_result.confidence}")
-        return {
-            "status": "verified",
-            "student_id": scanned_id,
-            "student_name": student_name,
-            "slot": slot,
-            "confidence": auth_result.confidence,
-            "session_active": True,
-        }
+        return {"status": "rejected", "reason": "unhandled_event"}
 
     def get_status(self, db: DBSession) -> dict:
         """Dashboard-friendly status snapshot."""
