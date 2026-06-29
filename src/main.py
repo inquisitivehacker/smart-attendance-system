@@ -64,12 +64,18 @@ def startup():
     )
     logger.info(f"Face profiles loaded: {face_service.profile_count}")
 
-    # 3. Create attendance engine
-    attendance_engine = AttendanceEngine(face_service=face_service)
+    # 3. Create IdentityService
+    from src.services.identity_service import IdentityService
+    identity_service = IdentityService(face_service=face_service)
+    logger.info("Identity service initialized")
+
+    # 4. Create attendance engine
+    attendance_engine = AttendanceEngine(face_service=face_service, identity_service=identity_service)
     logger.info("Attendance engine ready")
 
     logger.info(f"Server starting on {settings.host}:{settings.port}")
     logger.info("--- SYSTEM READY ---")
+
 
 
 # --- Include Routers ---

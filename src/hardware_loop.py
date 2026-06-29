@@ -36,8 +36,11 @@ class HardwareLoop:
         )
         
         logger.info("Initializing Engine and Hardware Services...")
-        self.engine = AttendanceEngine(self.face_service)
+        from src.services.identity_service import IdentityService
+        self.identity_service = IdentityService(face_service=self.face_service)
+        self.engine = AttendanceEngine(self.face_service, self.identity_service)
         self.camera = CameraService(camera_index=settings.camera_index)
+
         self.scanner = get_scanner_service()
         
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
