@@ -39,16 +39,20 @@ class HardwareLoop:
         from src.services.identity_service import IdentityService
         from src.services.event_resolver import EventResolver
         from src.services.presence_engine import PresenceEngine
+        from src.services.session_manager import SessionManager
         self.identity_service = IdentityService(face_service=self.face_service)
         self.event_resolver = EventResolver()
         self.presence_engine = PresenceEngine()
+        self.session_manager = SessionManager()
         self.engine = AttendanceEngine(
             face_service=self.face_service,
             identity_service=self.identity_service,
             event_resolver=self.event_resolver,
-            presence_engine=self.presence_engine
+            presence_engine=self.presence_engine,
+            session_manager=self.session_manager
         )
         self.camera = CameraService(camera_index=settings.camera_index)
+
 
 
 

@@ -36,7 +36,7 @@ class SessionRepository:
             status="active",
         )
         self.db.add(session)
-        self.db.commit()
+        self.db.flush()
         self.db.refresh(session)
         return session
 
@@ -45,7 +45,8 @@ class SessionRepository:
         self.db.query(ClassSession).filter(ClassSession.id == session_id).update(
             {"ended_at": datetime.now().isoformat(), "status": "completed"}
         )
-        self.db.commit()
+        self.db.flush()
+
 
     def get_today_sessions(self) -> list[ClassSession]:
         today = datetime.now().strftime("%Y-%m-%d")

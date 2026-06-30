@@ -31,6 +31,7 @@ def start_session(data: SessionStart, db: Session = Depends(get_db)):
         slot=slot,
         room=data.room,
     )
+    db.commit()
     return session
 
 
@@ -42,8 +43,10 @@ def end_session(db: Session = Depends(get_db)):
     if not active:
         raise HTTPException(status_code=404, detail="No active session")
     repo.end_session(active.id)
+    db.commit()
     # Refresh to get updated fields
     return repo.get_by_id(active.id)
+
 
 
 @router.get("/active", response_model=SessionResponse | None)

@@ -79,14 +79,21 @@ def startup():
     presence_engine = PresenceEngine()
     logger.info("Presence engine initialized")
 
+    # Create SessionManager
+    from src.services.session_manager import SessionManager
+    session_manager = SessionManager()
+    logger.info("Session manager initialized")
+
     # 4. Create attendance engine
     attendance_engine = AttendanceEngine(
         face_service=face_service,
         identity_service=identity_service,
         event_resolver=event_resolver,
-        presence_engine=presence_engine
+        presence_engine=presence_engine,
+        session_manager=session_manager
     )
     logger.info("Attendance engine ready")
+
 
 
 
