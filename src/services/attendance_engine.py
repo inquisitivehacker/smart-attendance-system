@@ -135,16 +135,26 @@ class AttendanceEngine:
             self.presence_engine.process_event(event, db)
 
             # 7. SessionManager lifecycle updates (Reacts only to faculty scans)
-            session_result = self.session_manager.handle_event(event, db)
-            if session_result is not None:
+            if event.event_type == EventType.FACULTY_EXIT:
+                active_session = self.session_manager.get_active_session(db)
+                session_id = active_session.id if active_session else None
+                session_result = self.session_manager.handle_event(event, db)
+                if session_result and session_result.get("status") == "session_ended" and session_id:
+                    from src.services.attendance_derivation_service import AttendanceDerivationService
+                    derivation_svc = AttendanceDerivationService()
+                    derivation_svc.derive_session_attendance(session_id, db)
                 db.commit()
                 return session_result
+            else:
+                session_result = self.session_manager.handle_event(event, db)
+                if session_result is not None:
+                    db.commit()
+                    return session_result
 
             # 8. Student scans compatibility triggers (Legacy maps)
             if event.event_type in (EventType.STUDENT_ENTER, EventType.STUDENT_EXIT):
                 active_session = self.session_manager.get_active_session(db)
                 if not active_session:
-
                     db.commit()
                     logger.info(f"Scan rejected: No active session for {scanned_id}")
                     return {"status": "rejected", "reason": "no_active_session"}
@@ -163,8 +173,7 @@ class AttendanceEngine:
                 # Update legacy student states for live dashboard summary views
                 state_machine.transition(scanned_id, StudentState.ACTIVE)
 
-                # Insert present log into attendance table
-                attendance_repo.mark_present(scanned_id, active_session.id)
+                # Attendance records are no longer inserted directly; they are derived on session end.
 
                 db.commit()
 
@@ -177,6 +186,7 @@ class AttendanceEngine:
                     "confidence": auth_result.confidence,
                     "session_active": True,
                 }
+
 
             db.commit()
             return {"status": "rejected", "reason": "unhandled_event"}

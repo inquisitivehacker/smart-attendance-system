@@ -1,3 +1,4 @@
+import tests.test_env  # noqa: F401
 import unittest
 from datetime import datetime
 from unittest.mock import MagicMock
@@ -24,7 +25,7 @@ class TestSessionTransaction(unittest.TestCase):
         # Ensure faculty is in DB
         fac = self.db.query(Faculty).filter(Faculty.id == self.faculty_id).first()
         if not fac:
-            fac = Faculty(id=self.faculty_id, name="Dr. Adheem", department="CSE", email="cse@test.com")
+            fac = Faculty(id=self.faculty_id, name="Dr. Adheem", department="CSE")
             self.db.add(fac)
             self.db.commit()
 

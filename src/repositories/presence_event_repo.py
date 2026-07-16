@@ -1,8 +1,11 @@
 import json
 import logging
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session as DBSession
 from src.models.presence_event import PresenceEvent as PresenceEventModel
 from src.schemas.presence_event import PresenceEvent as PresenceEventSchema
+
+EARLY_ARRIVAL_BUFFER_HOURS = 2
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,26 @@ class PresenceEventRepository:
         return (
             self.db.query(PresenceEventModel)
             .filter(PresenceEventModel.actor_id == actor_id)
+            .order_by(PresenceEventModel.timestamp.asc())
+            .all()
+        )
+
+    def find_student_events_for_session(
+        self, session_start: datetime, session_end: datetime
+    ) -> list[PresenceEventModel]:
+        """
+        Find all STUDENT presence events relevant to a specific session.
+        Applies a bounded lookback window to capture legitimate early arrivals.
+        """
+        query_start = session_start - timedelta(hours=EARLY_ARRIVAL_BUFFER_HOURS)
+        
+        return (
+            self.db.query(PresenceEventModel)
+            .filter(
+                PresenceEventModel.actor_role == "STUDENT",
+                PresenceEventModel.timestamp >= query_start,
+                PresenceEventModel.timestamp <= session_end,
+            )
             .order_by(PresenceEventModel.timestamp.asc())
             .all()
         )

@@ -23,7 +23,7 @@ class TimetableService:
 
     def get_current_slot(self) -> str:
         """Preserved from prototype get_current_slot()."""
-        now = datetime.now()
+        now = datetime.utcnow()
         minutes = now.hour * 60 + now.minute
         for name, start, end in self.slots:
             if start <= minutes < end:

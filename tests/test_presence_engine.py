@@ -1,3 +1,4 @@
+import tests.test_env  # noqa: F401
 import unittest
 from datetime import datetime
 from src.database import init_db, SessionLocal
@@ -16,6 +17,15 @@ class TestPresenceEngineIntegration(unittest.TestCase):
 
         # Clean previous presence data for test student
         self.student_id = "SET-12584"
+        
+        # Seed student if missing (required for foreign key referential integrity)
+        from src.models.student import Student
+        std = self.db.query(Student).filter(Student.id == self.student_id).first()
+        if not std:
+            std = Student(id=self.student_id, name="Jane Student")
+            self.db.add(std)
+            self.db.commit()
+
         record = self.db.query(StudentPresenceState).filter(
             StudentPresenceState.student_id == self.student_id
         ).first()

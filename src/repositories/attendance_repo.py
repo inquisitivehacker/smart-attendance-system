@@ -16,40 +16,50 @@ class AttendanceRepository:
 
     # --- Attendance Records ---
 
-    def mark_present(
-        self, student_id: str, session_id: int, method: str = "barcode_face", percentage: float = None, duration: int = None
-    ) -> Attendance:
-        """Upsert: update if exists, create if not."""
+
+    def upsert_attendance(self, record) -> Attendance:
+        """
+        Idempotent upsert of an AttendanceRecord into the database.
+        Does NOT commit the transaction (orchestrated by the caller).
+        """
         existing = (
             self.db.query(Attendance)
             .filter(
-                Attendance.student_id == student_id,
-                Attendance.session_id == session_id,
+                Attendance.student_id == record.student_id,
+                Attendance.session_id == record.session_id,
             )
             .first()
         )
-        now = datetime.now().isoformat()
+        now = datetime.utcnow().isoformat()
         if existing:
-            existing.status = "PRESENT"
+            existing.status = record.status
+            existing.attendance_percentage = record.participation_percentage
+            existing.duration_seconds = record.participation_seconds
+            existing.late_minutes = record.late_minutes
+            existing.early_departure_minutes = record.early_departure_minutes
+            existing.regularization_required = 1 if record.regularization_required else 0
+            existing.policy_version = record.policy_version
+            existing.computed_at = record.computed_at.isoformat() if record.computed_at else None
             existing.verified_at = now
-            existing.method = method
-            if percentage is not None:
-                existing.attendance_percentage = percentage
-            if duration is not None:
-                existing.duration_seconds = duration
+            existing.method = "barcode_face"
         else:
             existing = Attendance(
-                student_id=student_id,
-                session_id=session_id,
-                status="PRESENT",
+                student_id=record.student_id,
+                session_id=record.session_id,
+                status=record.status,
+                attendance_percentage=record.participation_percentage,
+                duration_seconds=record.participation_seconds,
+                late_minutes=record.late_minutes,
+                early_departure_minutes=record.early_departure_minutes,
+                regularization_required=1 if record.regularization_required else 0,
+                policy_version=record.policy_version,
+                computed_at=record.computed_at.isoformat() if record.computed_at else None,
                 verified_at=now,
-                method=method,
-                attendance_percentage=percentage,
-                duration_seconds=duration,
+                method="barcode_face",
                 created_at=now,
             )
             self.db.add(existing)
-        self.db.commit()
+        self.db.flush()
         return existing
 
 
@@ -61,7 +71,7 @@ class AttendanceRepository:
         )
 
     def get_student_today(self, student_id: str) -> list[Attendance]:
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.utcnow().strftime("%Y-%m-%d")
         return (
             self.db.query(Attendance)
             .filter(
@@ -90,25 +100,5 @@ class AttendanceRepository:
             scanned_at=datetime.utcnow(),
         )
         self.db.add(log)
-        self.db.commit()
+        self.db.flush()
         return log
-
-    def get_last_scan(self, student_id: str) -> ScanLog | None:
-        return (
-            self.db.query(ScanLog)
-            .filter(ScanLog.student_id == student_id)
-            .order_by(ScanLog.id.desc())
-            .first()
-        )
-
-    def get_last_successful_scan(self, student_id: str) -> ScanLog | None:
-        """Fetch the most recent scan where face was verified successfully."""
-        return (
-            self.db.query(ScanLog)
-            .filter(
-                ScanLog.student_id == student_id,
-                ScanLog.face_verified == 1
-            )
-            .order_by(ScanLog.id.desc())
-            .first()
-        )

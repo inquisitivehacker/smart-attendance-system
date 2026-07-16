@@ -8,7 +8,22 @@ import shutil
 import logging
 import sqlite3
 from sqlalchemy import inspect
-from src.database import engine, init_db, Base
+from src.database import engine, init_db
+
+SCHEMA_MIGRATIONS = {
+    "attendance": {
+        "attendance_percentage": {"sql_def": "REAL", "base_type": "REAL"},
+        "duration_seconds": {"sql_def": "INTEGER", "base_type": "INTEGER"},
+        "late_minutes": {"sql_def": "INTEGER", "base_type": "INTEGER"},
+        "early_departure_minutes": {"sql_def": "INTEGER", "base_type": "INTEGER"},
+        "regularization_required": {"sql_def": "INTEGER", "base_type": "INTEGER"},
+        "policy_version": {"sql_def": "TEXT", "base_type": "TEXT"},
+        "computed_at": {"sql_def": "TEXT", "base_type": "TEXT"},
+    },
+    "sessions": {
+        "faculty_id": {"sql_def": "TEXT REFERENCES faculty(id)", "base_type": "TEXT"},
+    }
+}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s")
 logger = logging.getLogger("migration")
@@ -46,35 +61,24 @@ def run_migration():
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # Check 'attendance' table columns
-        attendance_cols = []
-        if "attendance" in existing_tables:
-            attendance_cols = [c["name"] for c in inspector.get_columns("attendance")]
-        logger.info(f"Existing columns in 'attendance': {attendance_cols}")
+        # Re-fetch existing tables/columns to handle fresh db creation
+        existing_tables = inspect(engine).get_table_names()
         
-        if "attendance_percentage" not in attendance_cols:
-            logger.info("Adding 'attendance_percentage' column to 'attendance' table...")
-            cursor.execute("ALTER TABLE attendance ADD COLUMN attendance_percentage REAL")
-            conn.commit()
-            logger.info("Column 'attendance_percentage' added.")
-
-        if "duration_seconds" not in attendance_cols:
-            logger.info("Adding 'duration_seconds' column to 'attendance' table...")
-            cursor.execute("ALTER TABLE attendance ADD COLUMN duration_seconds INTEGER")
-            conn.commit()
-            logger.info("Column 'duration_seconds' added.")
-
-        # Check 'sessions' table columns
-        sessions_cols = []
-        if "sessions" in existing_tables:
-            sessions_cols = [c["name"] for c in inspector.get_columns("sessions")]
-        logger.info(f"Existing columns in 'sessions': {sessions_cols}")
+        for table_name, columns in SCHEMA_MIGRATIONS.items():
+            if table_name in existing_tables:
+                cursor.execute(f"PRAGMA table_info({table_name})")
+                existing_cols = [r[1] for r in cursor.fetchall()]
+                logger.info(f"Existing columns in '{table_name}': {existing_cols}")
+                
+                for col_name, col_attrs in columns.items():
+                    if col_name not in existing_cols:
+                        sql_def = col_attrs["sql_def"]
+                        logger.info(f"Adding '{col_name}' column to '{table_name}' table...")
+                        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {sql_def}")
+                        logger.info(f"Column '{col_name}' added.")
         
-        if "faculty_id" not in sessions_cols:
-            logger.info("Adding 'faculty_id' column to 'sessions' table...")
-            cursor.execute("ALTER TABLE sessions ADD COLUMN faculty_id TEXT REFERENCES faculty(id)")
-            conn.commit()
-            logger.info("Column 'faculty_id' added.")
+        # Commit all schema changes at once
+        conn.commit()
 
         cursor.close()
         conn.close()
@@ -106,25 +110,26 @@ def validate_migration():
         logger.info(f"✓ Table '{table}' verified.")
 
     # B. Verify columns exist via PRAGMA table_info
-    # Check attendance columns
-    cursor.execute("PRAGMA table_info(attendance)")
-    att_info = {r[1]: r[2] for r in cursor.fetchall()}
-    logger.info(f"PRAGMA table_info(attendance): {att_info}")
-    
-    if "attendance_percentage" not in att_info or att_info["attendance_percentage"] != "REAL":
-        raise ValueError("Validation failed: column 'attendance_percentage' (REAL) is missing or has incorrect type in 'attendance'.")
-    if "duration_seconds" not in att_info or att_info["duration_seconds"] != "INTEGER":
-        raise ValueError("Validation failed: column 'duration_seconds' (INTEGER) is missing or has incorrect type in 'attendance'.")
-    logger.info("✓ New attendance columns verified.")
-
-    # Check sessions columns
-    cursor.execute("PRAGMA table_info(sessions)")
-    sess_info = {r[1]: r[2] for r in cursor.fetchall()}
-    logger.info(f"PRAGMA table_info(sessions): {sess_info}")
-    
-    if "faculty_id" not in sess_info or sess_info["faculty_id"] != "TEXT":
-        raise ValueError("Validation failed: column 'faculty_id' (TEXT) is missing or has incorrect type in 'sessions'.")
-    logger.info("✓ New sessions columns verified.")
+    for table_name, columns in SCHEMA_MIGRATIONS.items():
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        table_info = {r[1]: r[2] for r in cursor.fetchall()}
+        logger.info(f"PRAGMA table_info({table_name}): {table_info}")
+        
+        for col_name, col_attrs in columns.items():
+            expected_type = col_attrs["base_type"]
+            
+            # Special case for FLOAT/REAL and BOOLEAN/INTEGER due to SQLAlchemy mappings in SQLite
+            allowed_types = [expected_type]
+            if expected_type == "REAL":
+                allowed_types.append("FLOAT")
+            elif expected_type == "INTEGER":
+                allowed_types.append("BOOLEAN")
+                
+            if col_name not in table_info:
+                raise ValueError(f"Validation failed: column '{col_name}' is missing in '{table_name}'.")
+            if table_info[col_name] not in allowed_types:
+                raise ValueError(f"Validation failed: column '{col_name}' ({'/'.join(allowed_types)}) has incorrect type in '{table_name}' (found {table_info.get(col_name)}).")
+        logger.info(f"✓ New {table_name} columns verified.")
 
     # C. Run Foreign Key Check
     logger.info("Running PRAGMA foreign_key_check...")

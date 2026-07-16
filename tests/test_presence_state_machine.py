@@ -1,3 +1,4 @@
+import tests.test_env  # noqa: F401
 import unittest
 from datetime import datetime, timedelta
 from src.schemas.event_types import EventType

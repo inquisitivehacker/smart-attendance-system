@@ -45,6 +45,7 @@ app.add_middleware(
 # --- Global Services (initialized on startup) ---
 face_service: FaceService | None = None
 attendance_engine: AttendanceEngine | None = None
+manual_session_service = None
 
 
 @app.on_event("startup")
@@ -84,6 +85,15 @@ def startup():
     session_manager = SessionManager()
     logger.info("Session manager initialized")
 
+    # Create ManualSessionService
+    from src.services.manual_session_service import ManualSessionService
+    global manual_session_service
+    manual_session_service = ManualSessionService(
+        presence_engine=presence_engine,
+        session_manager=session_manager
+    )
+    logger.info("Manual session service initialized")
+
     # 4. Create attendance engine
     attendance_engine = AttendanceEngine(
         face_service=face_service,
@@ -94,8 +104,17 @@ def startup():
     )
     logger.info("Attendance engine ready")
 
-
-
+    # 5. Run RuntimeRecoveryService to rebuild states and log reports/warnings
+    from src.services.runtime_recovery_service import RuntimeRecoveryService
+    from src.database import SessionLocal
+    db = SessionLocal()
+    try:
+        recovery_svc = RuntimeRecoveryService()
+        recovery_svc.recover_runtime(presence_engine, session_manager, db)
+    except Exception as e:
+        logger.error(f"Runtime recovery failed on startup: {e}")
+    finally:
+        db.close()
 
     logger.info(f"Server starting on {settings.host}:{settings.port}")
     logger.info("--- SYSTEM READY ---")

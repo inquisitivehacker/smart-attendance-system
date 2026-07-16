@@ -1,3 +1,4 @@
+import tests.test_env  # noqa: F401
 import unittest
 from datetime import datetime
 from unittest.mock import MagicMock
@@ -19,6 +20,14 @@ class TestPresenceTransaction(unittest.TestCase):
         init_db()
         self.db = SessionLocal()
         self.student_id = "SET-12584"
+
+        # Ensure student exists in DB for foreign key constraint
+        from src.models.student import Student
+        std = self.db.query(Student).filter(Student.id == self.student_id).first()
+        if not std:
+            std = Student(id=self.student_id, name="Jane Student")
+            self.db.add(std)
+            self.db.commit()
 
         # Ensure student presence record is cleared
         rec = self.db.query(StudentPresenceState).filter(StudentPresenceState.student_id == self.student_id).first()

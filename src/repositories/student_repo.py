@@ -25,7 +25,7 @@ class StudentRepository:
             id=student_id,
             name=name,
             department=department,
-            created_at=datetime.now().isoformat(),
+            created_at=datetime.utcnow().isoformat(),
         )
         self.db.add(student)
         self.db.commit()

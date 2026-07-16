@@ -40,10 +40,15 @@ class HardwareLoop:
         from src.services.event_resolver import EventResolver
         from src.services.presence_engine import PresenceEngine
         from src.services.session_manager import SessionManager
+        from src.services.manual_session_service import ManualSessionService
         self.identity_service = IdentityService(face_service=self.face_service)
         self.event_resolver = EventResolver()
         self.presence_engine = PresenceEngine()
         self.session_manager = SessionManager()
+        self.manual_session_service = ManualSessionService(
+            presence_engine=self.presence_engine,
+            session_manager=self.session_manager
+        )
         self.engine = AttendanceEngine(
             face_service=self.face_service,
             identity_service=self.identity_service,
@@ -51,6 +56,18 @@ class HardwareLoop:
             presence_engine=self.presence_engine,
             session_manager=self.session_manager
         )
+        
+        # Run RuntimeRecoveryService to rebuild states and log reports/warnings
+        from src.services.runtime_recovery_service import RuntimeRecoveryService
+        db = SessionLocal()
+        try:
+            recovery_svc = RuntimeRecoveryService()
+            recovery_svc.recover_runtime(self.presence_engine, self.session_manager, db)
+        except Exception as e:
+            logger.error(f"Runtime recovery failed on startup: {e}")
+        finally:
+            db.close()
+
         self.camera = CameraService(camera_index=settings.camera_index)
 
 

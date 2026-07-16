@@ -1,3 +1,4 @@
+import tests.test_env  # noqa: F401
 import unittest
 import json
 from datetime import datetime

@@ -13,39 +13,56 @@ timetable = TimetableService()
 
 @router.post("/start", response_model=SessionResponse, status_code=201)
 def start_session(data: SessionStart, db: Session = Depends(get_db)):
-    """Faculty starts a new class session."""
+    """Faculty starts a new class session via REST."""
     repo = SessionRepository(db)
 
-    # Check if a session is already active
-    active = repo.get_active()
-    if active:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Session already active: {active.subject} by {active.faculty_name}",
-        )
+    # 1. Resolve faculty_id by name
+    from src.models.faculty import Faculty
+    faculty = db.query(Faculty).filter(Faculty.name == data.faculty_name).first()
+    faculty_id = faculty.id if faculty else "FAC-01"
 
-    slot = timetable.get_current_slot()
-    session = repo.start_session(
-        faculty=data.faculty_name,
+    # 2. Build formal request object
+    from src.schemas.manual_session import SessionStartRequest
+    request = SessionStartRequest(
+        faculty_id=faculty_id,
+        faculty_name=data.faculty_name,
         subject=data.subject,
-        slot=slot,
-        room=data.room,
+        room=data.room
     )
-    db.commit()
-    return session
+
+    # 3. Call ManualSessionService
+    from src.main import manual_session_service
+    if not manual_session_service:
+        raise HTTPException(status_code=503, detail="ManualSessionService not ready")
+
+    try:
+        result = manual_session_service.start_session(request, db)
+        db.commit()
+        session_id = result.get("session_id")
+        return repo.get_by_id(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @router.post("/end", response_model=SessionResponse)
 def end_session(db: Session = Depends(get_db)):
-    """End the currently active session."""
+    """End the currently active session via REST."""
     repo = SessionRepository(db)
     active = repo.get_active()
     if not active:
         raise HTTPException(status_code=404, detail="No active session")
-    repo.end_session(active.id)
-    db.commit()
-    # Refresh to get updated fields
-    return repo.get_by_id(active.id)
+
+    from src.main import manual_session_service
+    if not manual_session_service:
+        raise HTTPException(status_code=503, detail="ManualSessionService not ready")
+
+    try:
+        manual_session_service.end_session(db)
+        db.commit()
+        return repo.get_by_id(active.id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 
 
 

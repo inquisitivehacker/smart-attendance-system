@@ -15,6 +15,11 @@ class Attendance(Base):
     status = Column(Text, nullable=False)  # PRESENT | ABSENT | LATE | UNVERIFIED
     attendance_percentage = Column(Float, nullable=True)
     duration_seconds = Column(Integer, nullable=True)
+    late_minutes = Column(Integer, nullable=True)
+    early_departure_minutes = Column(Integer, nullable=True)
+    regularization_required = Column(Integer, nullable=True)
+    policy_version = Column(Text, nullable=True)
+    computed_at = Column(Text, nullable=True)
     verified_at = Column(Text)  # When face was verified
     method = Column(Text, default="barcode_face")  # barcode_face | manual_override
     created_at = Column(Text)

@@ -41,10 +41,14 @@ class SessionManager:
             # Determine hour slot
             slot = self.timetable.get_current_slot() or "Hour 1"
 
+            subject = "Computer Science"
+            if event.metadata and "subject" in event.metadata:
+                subject = event.metadata["subject"]
+
             session = session_repo.start_session(
                 faculty=faculty_name,
                 faculty_id=event.actor_id,
-                subject="Computer Science",
+                subject=subject,
                 slot=slot,
                 room=event.classroom_id
             )

@@ -32,7 +32,7 @@ class SessionRepository:
             subject=subject,
             slot=slot,
             room=room,
-            started_at=datetime.now().isoformat(),
+            started_at=datetime.utcnow().isoformat(),
             status="active",
         )
         self.db.add(session)
@@ -43,13 +43,13 @@ class SessionRepository:
 
     def end_session(self, session_id: int):
         self.db.query(ClassSession).filter(ClassSession.id == session_id).update(
-            {"ended_at": datetime.now().isoformat(), "status": "completed"}
+            {"ended_at": datetime.utcnow().isoformat(), "status": "completed"}
         )
         self.db.flush()
 
 
     def get_today_sessions(self) -> list[ClassSession]:
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.utcnow().strftime("%Y-%m-%d")
         return (
             self.db.query(ClassSession)
             .filter(ClassSession.started_at.like(f"{today}%"))
